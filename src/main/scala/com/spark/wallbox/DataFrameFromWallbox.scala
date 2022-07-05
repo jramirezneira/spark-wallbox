@@ -31,12 +31,12 @@ object DataFrameFromWallbox {
 
 
 
-
+    //Load charger_log_status data source
     val df_charger_log_status=spark.read.option("encoding", "UTF-8").json("src/main/resources/charger_log_status2/")
       .withColumn("charger_timestamp", from_unixtime(col("charger_timestamp")))
 
       //.withColumn("session_id",(col("id"))).drop(col("id"))
-      .withColumn("charger_id_status_log",(col("charger_id"))).drop(col("charger_id"))
+      .withColumn("charger_id_table_log",(col("charger_id"))).drop(col("charger_id"))
       .withColumn("phase1",element_at(col("charger_phases"),1))
       .withColumn("phase2",element_at(col("charger_phases"),2))
       .withColumn("phase3",element_at(col("charger_phases"),3)).drop("charger_phases")
@@ -55,90 +55,67 @@ object DataFrameFromWallbox {
 
 
 
-
-     // .withColumn("phase2",array_position(col("charger_phases"),1))
-     // .withColumn("phase3",array_position(col("charger_phases"),2))
-     // .show()
-     // .select(col("uri").alias("url"), col("version"))
-
-
-    //.withColumn("charger_phases",explode(col("charger_phases"))).select("charger_phases.ac_current_rms","charger_phases.ac_voltage_rms", "charger_phases.temperature", "*")
-    // .where(col("charger_id_status_log") === "62339")
-   // df_charger_log_status.printSchema()
-    //df_charger_log_status.show()
-
-
-    //df_charger_log_status.printSchema()
-    //df_charger_log_status.show(false)
-
-    /*df_charger_log_status.groupBy("charger_id")
-      .agg(
-        min("temperature").as("min_temperature"),
-        avg("temperature").as("avg_temperature"),
-        max("temperature").as("max_temperature"),
-        min("ac_current_rms").as("min_ac_current_rms"),
-        avg("ac_current_rms").as("avg_ac_current_rms"),
-        max("ac_current_rms").as("max_ac_current_rms"),
-        min("ac_voltage_rms").as("min_ac_voltage_rms"),
-        avg("ac_voltage_rms").as("avg_ac_voltage_rms"),
-        max("ac_voltage_rms").as("max_ac_voltage_rms")
-      )
-      .show()*/
-
-
+    //Load charger_log_session2 data source
     val df_charger_log_session=spark.read.json("src/main/resources/charger_log_session2/")
-     .withColumn("start_time",  col("start_time"))
-      .withColumn("end_time",col("end_time"))
+     //.withColumn("start_time",  col("start_time"))
+      .withColumn("charger_id_table_session",(col("charger_id"))).drop(col("charger_id")) //Change column charger_id name to charger_id_table_session
+    //  .withColumn("end_time",col("end_time"))
       .withColumn("DiffInSeconds",col("end_time") - col("start_time"))
       .withColumn("DiffInMinutes",round(col("DiffInSeconds")/60))
       .withColumn("DiffInHours",round(col("DiffInSeconds")/3600))
-      .withColumn("start_time", from_unixtime(col("start_time")))
-      .withColumn("end_time", from_unixtime(col("end_time")))
-    //  .where(col("charger_id") === "62339")//.orderBy(col("charger_id"))
-      .withColumn("charger_id_session_log",(col("charger_id"))).drop(col("charger_id"))
-      .withColumn("session_id",(col("id"))).drop(col("id"))
+      .withColumn("start_time", from_unixtime(col("start_time"))) //Change type start_time
+      .withColumn("end_time", from_unixtime(col("end_time"))) //Change type end_time
+      .withColumn("session_id",(col("id"))).drop(col("id")) //Change name id to session_id
       .orderBy(col("DiffInSeconds").desc)
     //df_charger_log_session.printSchema()
     //df_charger_log_session.show(false)
     df_charger_log_session.show()
     println(df_charger_log_session.count())
-
-
-
-
-  //  df_charger_log_session.limit(1000).write.jdbc()
     df_charger_log_session.limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="log_session_time",  connectionProperties)
 
+    df_charger_log_session.groupBy("charger_id_table_session")
+      .agg(
+        min("DiffInSeconds").alias("min_DiffInSeconds"),
+        avg("DiffInSeconds").alias("avg_DiffInSeconds"),
+        max("DiffInSeconds").alias("max_DiffInSeconds")
 
+      )
+      .limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_time_aggregations",  connectionProperties)
+
+
+
+  // join tables df_charger_log_status df_charger_log_session
     val df_charger = df_charger_log_session.join(
                                 df_charger_log_status,
-                                df_charger_log_session("charger_id_session_log") ===  df_charger_log_status("charger_id_status_log") &&
+                                df_charger_log_session("charger_id_table_session") ===  df_charger_log_status("charger_id_table_log") &&
                                 df_charger_log_session("start_time") <=  df_charger_log_status("charger_timestamp") &&
                                 df_charger_log_session("end_time") >=  df_charger_log_status("charger_timestamp"),"inner")
 
     var df_charger_aggregations = df_charger
 
-    df_charger_aggregations.groupBy("charger_id_session_log","session_id")
+    //Create aggragations for temperature, ac_current_rms and ac_voltage_rms
+    df_charger_aggregations.groupBy("charger_id_table_log","session_id")
       .agg(
-        min("min_temperature1").as("min_temperature_phase1"),
-        avg("avg_temperature1").as("avg_temperature_phase1"),
-        max("max_temperature1").as("max_temperature_phase1"),
-        min("min_temperature2").as("min_temperature_phase2"),
-        avg("avg_temperature2").as("avg_temperature_phase2"),
-        max("max_temperature2").as("max_temperature_phase2"),
-        min("min_temperature3").as("min_temperature_phase3"),
-        avg("avg_temperature3").as("avg_temperature_phase3"),
-        max("max_temperature3").as("max_temperature_phase3"),
-        min("min_ac_current_rms1").as("min_ac_current_rms_phase1"),
-        avg("avg_ac_current_rms2").as("avg_ac_current_rms_phase2"),
-        max("max_ac_current_rms3").as("max_ac_current_rms_phase3"),
-        min("min_ac_voltage_rms1").as("min_ac_voltage_rms_phase1"),
-        avg("avg_ac_voltage_rms2").as("avg_ac_voltage_rms_phase2"),
-        max("max_ac_voltage_rms1").as("max_ac_voltage_rms_phase3")
+        min("temperature1").alias("min_temperature_phase1"),
+        avg("temperature1").alias("avg_temperature_phase1"),
+        max("temperature1").alias("max_temperature_phase1"),
+        min("temperature2").alias("min_temperature_phase2"),
+        avg("temperature2").alias("avg_temperature_phase2"),
+        max("temperature2").alias("max_temperature_phase2"),
+        min("temperature3").alias("min_temperature_phase3"),
+        avg("temperature3").alias("avg_temperature_phase3"),
+        max("temperature3").alias("max_temperature_phase3"),
+        min("ac_current_rms1").alias("min_ac_current_rms_phase1"),
+        avg("ac_current_rms2").alias("avg_ac_current_rms_phase2"),
+        max("ac_current_rms3").alias("max_ac_current_rms_phase3"),
+        min("ac_voltage_rms1").alias("min_ac_voltage_rms_phase1"),
+        avg("ac_voltage_rms2").alias("avg_ac_voltage_rms_phase2"),
+        max("ac_voltage_rms1").alias("max_ac_voltage_rms_phase3")
       )
-    df_charger_aggregations.limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_aggregations",  connectionProperties)
+   .limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_aggregations",  connectionProperties) //Store in database
+   //df_charger_aggregations.show()
 
-
+    //Calculate big variations
     val window = Window.partitionBy("session_id").orderBy("charger_timestamp")
     df_charger.withColumn("previous_temperature1", lag(col("temperature1"), 1, null).over(window))
       .withColumn("previous_temperature2", lag(col("temperature2"), 1, null).over(window))
@@ -163,82 +140,10 @@ object DataFrameFromWallbox {
        || col("var_ac_voltage_rms1")>0.1 ||  col("var_ac_voltage_rms1") < -0.1 || col("var_ac_voltage_rms2")>0.1 ||  col("var_ac_voltage_rms2") < -0.1 || col("var_ac_voltage_rms3")>0.1 ||  col("var_ac_voltage_rms3") < -0.1
       )
     //  .where(col("session_id")==="4441352")
-    df_charger.limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_big_changes",  connectionProperties)
+    .limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_big_changes",  connectionProperties)
 
-     // .show(500)
+    df_charger.show()
 
-
-
-
-   /* df_charger_log_session.withColumn("start_time",  col("start_time"))
-      .withColumn("end_time",col("end_time"))
-      .withColumn("DiffInSeconds",col("end_time") - col("start_time"))
-      .withColumn("DiffInMinutes",round(col("DiffInSeconds")/60))
-      .withColumn("DiffInHours",round(col("DiffInSeconds")/3600))
-      .show()*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-  /*
-    //spark read csv file
-    val df = spark.read.csv("src/main/resources/zipcodes.csv")
-    df.show()
-    df.printSchema()
-
-    //read csv with options
-    val df2 = spark.read.options(Map("inferSchema"->"true","delimiter"->",","header"->"true")).csv("src/main/resources/zipcodes.csv")
-    df2.show()
-    df2.printSchema()
-
-    //read with custom schema
-    import org.apache.spark.sql.types._
-    val schema = new StructType()
-      .add("RecordNumber",IntegerType,true)
-      .add("Zipcode",IntegerType,true)
-      .add("ZipCodeType",StringType,true)
-      .add("City",StringType,true)
-      .add("State",StringType,true)
-      .add("LocationType",StringType,true)
-      .add("Lat",DoubleType,true)
-      .add("Long",DoubleType,true)
-      .add("Xaxis",DoubleType,true)
-      .add("Yaxis",DoubleType,true)
-      .add("Zaxis",DoubleType,true)
-      .add("WorldRegion",StringType,true)
-      .add("Country",StringType,true)
-      .add("LocationText",StringType,true)
-      .add("Location",StringType,true)
-      .add("Decommisioned",BooleanType,true)
-      .add("TaxReturnsFiled",IntegerType,true)
-      .add("EstimatedPopulation",IntegerType,true)
-      .add("TotalWages",IntegerType,true)
-      .add("Notes",StringType,true)
-
-    //Write dataframe back to csv file
-    val df_with_schema = spark.read.format("csv")
-      .option("header", "true")
-      .schema(schema)
-      .load("src/main/resources/zipcodes.csv")
-
-    df_with_schema.printSchema()
-    df_with_schema.show(false)
-
-
-    //Write a csv file
-    df_with_schema.write.mode(SaveMode.Overwrite)
-      .csv("c:/tmp/spark_output/zipcodes")
-
-   */
 
   }
 }
