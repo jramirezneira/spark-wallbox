@@ -19,7 +19,7 @@ object DataFrameFromWallbox {
   def main(args:Array[String]):Unit= {
     val spark: SparkSession = SparkSession.builder()
       .master("local[1]")
-      .appName("SparkByExample")
+      .appName("SparkWallbox")
       .getOrCreate()
 
     spark.sparkContext.setLogLevel("ERROR")
