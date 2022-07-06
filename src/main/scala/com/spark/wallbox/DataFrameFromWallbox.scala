@@ -4,23 +4,19 @@ import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.expressions.Window
 import java.util.Properties
-import org.apache.spark.sql.SaveMode
 
 
 object DataFrameFromWallbox {
 
-  val connectionProperties = new Properties()
+  val connectionParam = new Properties
+  connectionParam.load(getClass().getResourceAsStream("/db.properties"))
+  //PropertyConfigurator.configure(connectionParam)
 
-  connectionProperties.put("user", "wodjrrhvkhjolj")
-  connectionProperties.put("password", "03b048a66da39d245d693a9d7f45d161f19e2c0387c74491bd70e39e1eda6584")
+  val url= connectionParam.getProperty("url")
 
-  val driverClass = "org.postgresql.Driver"
-  connectionProperties.setProperty("Driver", driverClass)
 
-  val url ="jdbc:postgresql://ec2-54-247-137-184.eu-west-1.compute.amazonaws.com/dc5cdu9d8513qn"
 
   def main(args:Array[String]):Unit= {
-
     val spark: SparkSession = SparkSession.builder()
       .master("local[1]")
       .appName("SparkByExample")
@@ -28,11 +24,8 @@ object DataFrameFromWallbox {
 
     spark.sparkContext.setLogLevel("ERROR")
 
-
-
-
     //Load charger_log_status data source
-    val df_charger_log_status=spark.read.option("encoding", "UTF-8").json("src/main/resources/charger_log_status2/")
+    val df_charger_log_status=spark.read.option("encoding", "UTF-8").json("src/main/resources/charger_log_status/")
       .withColumn("charger_timestamp", from_unixtime(col("charger_timestamp")))
 
       //.withColumn("session_id",(col("id"))).drop(col("id"))
@@ -56,7 +49,7 @@ object DataFrameFromWallbox {
 
 
     //Load charger_log_session2 data source
-    val df_charger_log_session=spark.read.json("src/main/resources/charger_log_session2/")
+    val df_charger_log_session=spark.read.json("src/main/resources/charger_log_session/")
      //.withColumn("start_time",  col("start_time"))
       .withColumn("charger_id_table_session",(col("charger_id"))).drop(col("charger_id")) //Change column charger_id name to charger_id_table_session
     //  .withColumn("end_time",col("end_time"))
@@ -71,16 +64,22 @@ object DataFrameFromWallbox {
     //df_charger_log_session.show(false)
     df_charger_log_session.show()
     println(df_charger_log_session.count())
-    df_charger_log_session.limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="log_session_time",  connectionProperties)
+    df_charger_log_session.limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="log_session_time",  connectionParam)
 
+    //Create agreggation by charger id
     df_charger_log_session.groupBy("charger_id_table_session")
       .agg(
-        min("DiffInSeconds").alias("min_DiffInSeconds"),
-        avg("DiffInSeconds").alias("avg_DiffInSeconds"),
-        max("DiffInSeconds").alias("max_DiffInSeconds")
+        min("DiffInHours").alias("min_hours"),
+        avg("DiffInHours").alias("avg_hours"),
+        max("DiffInHours").alias("max_hours"),
+        sum("DiffInHours").alias("total_hours"),
+        sum("energy").alias("total_energy"),
+        sum("total_cost").alias("sum_total_cost"),
+        avg(col("total_cost")/col("DiffInHours")).alias("avg_cost_by_hour")
 
       )
-      .limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_time_aggregations",  connectionProperties)
+      .limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_time_aggregations",  connectionParam)
+
 
 
 
@@ -112,7 +111,7 @@ object DataFrameFromWallbox {
         avg("ac_voltage_rms2").alias("avg_ac_voltage_rms_phase2"),
         max("ac_voltage_rms1").alias("max_ac_voltage_rms_phase3")
       )
-   .limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_aggregations",  connectionProperties) //Store in database
+   .limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_aggregations",  connectionParam) //Store in database
    //df_charger_aggregations.show()
 
     //Calculate big variations
@@ -140,7 +139,7 @@ object DataFrameFromWallbox {
        || col("var_ac_voltage_rms1")>0.1 ||  col("var_ac_voltage_rms1") < -0.1 || col("var_ac_voltage_rms2")>0.1 ||  col("var_ac_voltage_rms2") < -0.1 || col("var_ac_voltage_rms3")>0.1 ||  col("var_ac_voltage_rms3") < -0.1
       )
     //  .where(col("session_id")==="4441352")
-    .limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_big_changes",  connectionProperties)
+    .limit(1000).write.mode(SaveMode.Overwrite).jdbc(url, table="charger_big_changes",  connectionParam)
 
     df_charger.show()
 
