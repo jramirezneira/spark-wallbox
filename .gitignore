@@ -11,4 +11,5 @@ target/
 .DS_Store
 *.iml
 scalastyle-output.xml
+src/main/resources
 
