@@ -18,14 +18,13 @@ object DataFrameFromWallbox {
 
   def main(args:Array[String]):Unit= {
     val spark: SparkSession = SparkSession.builder()
-      .master("local[1]")
-      .appName("SparkWallbox")
+      .master("local[3]")
       .getOrCreate()
 
     spark.sparkContext.setLogLevel("ERROR")
 
     //Load charger_log_status data source
-    val df_charger_log_status=spark.read.option("encoding", "UTF-8").json("src/main/resources/charger_log_status/")
+    val df_charger_log_status=spark.read.option("encoding", "UTF-8").json("src/main/resources/charger_log_status2/")
       .withColumn("charger_timestamp", from_unixtime(col("charger_timestamp")))
 
       //.withColumn("session_id",(col("id"))).drop(col("id"))
@@ -49,7 +48,7 @@ object DataFrameFromWallbox {
 
 
     //Load charger_log_session2 data source
-    val df_charger_log_session=spark.read.json("src/main/resources/charger_log_session/")
+    val df_charger_log_session=spark.read.json("src/main/resources/charger_log_session2/")
      //.withColumn("start_time",  col("start_time"))
       .withColumn("charger_id_table_session",(col("charger_id"))).drop(col("charger_id")) //Change column charger_id name to charger_id_table_session
     //  .withColumn("end_time",col("end_time"))
